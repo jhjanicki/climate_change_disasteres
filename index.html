@@ -1,0 +1,497 @@
+<!doctype html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name='viewport' content='initial-scale=1,maximum-scale=1,user-scalable=no' />
+  <title>Climate change map</title>
+  <link href='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css' rel='stylesheet' type='text/css'>
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300;0,400;0,600;0,700;1,300;1,400;1,600;1,700&display=swap" rel="stylesheet">
+  <script src='https://api.mapbox.com/mapbox-gl-js/v1.6.0/mapbox-gl.js'></script>
+  <link href='https://api.mapbox.com/mapbox-gl-js/v1.6.0/mapbox-gl.css' rel='stylesheet' />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.1.1/d3.min.js"></script>
+  <link href="./style.css" rel="stylesheet">
+</head>
+
+<body>
+  <div id='map'></div>
+  <div id='console'>
+    <p> <b>Climate change effects by country</b></p>
+    <div class="itemWrapper" id="legendWrapper">
+      <div class="item" id="low">worse (28)</div>
+      <img class="item" id="legend" src="./img/legend1.png" />
+      <div class="item" id="high">better (77)</div>
+    </div>
+    <div class='session' id='sliderbar'>
+      <input id='slider' class='row' type='range' min='1960' max='2010' step='10' value='1960' />
+      <div id="wrapper">
+        <p id="start"></p>
+        <p id="end"></p>
+      </div>
+      <p>Decade: <span id="selectedDecade">1960s</span></p>
+    </div>
+    <div class="itemWrapper">
+      <div class='row toggle item2 filters' id="filter1">
+        <input id='layer1On' type="radio" value="layer1On" name="toggle" checked='checked'>
+        <input id='layer1Off' type="radio" value="layer1Off" name="toggle">
+        <div class="toggle__pointer color1"></div>
+      </div>
+      <div class="item2">
+        <h2 id="one">Flood</h2>
+      </div>
+    </div>
+    <div class="itemWrapper">
+      <div class='row toggle2 item2 filters' id="filter2">
+        <input id='layer2On' type="radio" value="layer2On" name="toggle2" checked='checked'>
+        <input id='layer2Off' type="radio" value="layer2Off" name="toggle2">
+        <div class="toggle__pointer color2"></div>
+      </div>
+      <div class="item2">
+        <h2 id="two">Storm</h2>
+      </div>
+    </div>
+    <div class="itemWrapper">
+      <div class='row toggle3 item2 filters' id="filter3">
+        <input id='layer3On' type="radio" value="layer3On" name="toggle3" checked='checked'>
+        <input id='layer3Off' type="radio" value="layer3Off" name="toggle3">
+        <div class="toggle__pointer color3"></div>
+      </div>
+      <div class="item2">
+        <h2 id="three">Drought</h2>
+      </div>
+    </div>
+    <div class="itemWrapper">
+      <div class='row toggle4 item2 filters' id="filter4">
+        <input id='layer4On' type="radio" value="layer4On" name="toggle4" checked='checked'>
+        <input id='layer4Off' type="radio" value="layer4Off" name="toggle4">
+        <div class="toggle__pointer color4"></div>
+      </div>
+      <div class="item2">
+        <h2 id="seven">Wildfire</h2>
+      </div>
+    </div>
+    <div class="itemWrapper">
+      <div class='row toggle5 item2 filters' id="filter5">
+        <input id='layer5On' type="radio" value="layer5On" name="toggle5" checked='checked'>
+        <input id='layer5Off' type="radio" value="layer5Off" name="toggle5">
+        <div class="toggle__pointer color5"></div>
+      </div>
+      <div class="item2">
+        <h2 id="seven">Extreme temperature</h2>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.2/jquery.min.js"></script>
+    <!-- countries geojson -->
+  <script src='./data/countries.js'></script> 
+    <!-- countries data -->
+  <script src='./data/data.js'></script>
+    <!-- disasters data -->
+  <script src='./data/disasters.js'></script>
+
+  <script>
+
+    //******************
+    // Responsive setup
+    //******************
+    const windowWidth = $(window).width();
+    const windowHeight = $(window).height();
+    const viewportWidth = Math.max(document.documentElement.clientWidth, window.innerWidth || 0);
+    const viewportHeight = Math.max(document.documentElement.clientHeight, window.innerHeight || 0);
+
+    let mobile = false;
+
+    //reload page on resize
+    $(window).resize(function () {
+      if (windowWidth != $(window).width() || windowHeight != $(window).height()) {
+        location.reload();
+        return;
+      }
+    });
+
+    if (/Android|webOS|iPhone|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+      mobile = true;
+    }
+
+
+    //**********
+    // Map setup
+    //**********
+
+    mapboxgl.accessToken = 'pk.eyJ1IjoiamhqYW5pY2tpIiwiYSI6Il9vb1ZlWnMifQ.zJie3Sr8zh3h5rR8IBMB2A';
+
+    let map = new mapboxgl.Map({
+        container: 'map', // container element id
+        style: 'mapbox://styles/jhjanicki/ckrukpn7t13zy18o82tq8o7wp',
+        center: [9.168248, 11.987638], // initial map center in [lon, lat]
+        zoom: 2,
+        minZoom: 1
+      });
+
+    
+    //******************
+    // Other global vars
+    //******************
+    
+    let popup;
+
+    const minDisasters = 1; //should probably get dynamically
+    const maxDisasters = 100; //should probably get dynamically
+    const maxSlider = 2010;
+    const minCircleSize = 3;
+    const maxCircleSize = 40;
+    
+
+    //colorScale to style popup background based on same colors as map fill 
+    //(though map country fill is scaled using Mapbox expressions as opposed to D3)
+    const colorScale = d3.scaleLinear()
+        .domain([20,30,40,50,60,70,80])
+        .range(['#49010d','#cb181d','#fb6a4a','#fc9272','#fcbba1','#fee0d2','#fff5f0']);
+
+    
+    // Disaster (toggle buttons) & decade (slider) filters
+    let activeDisasters = ['Flood', 'Storm', 'Drought', 'Wildfire', 'Extreme temperature']
+    const allDisasters = ['Flood', 'Storm', 'Drought', 'Wildfire', 'Extreme temperature']
+
+    let disasterFilter = ["in", ["get", "type"], ["literal", activeDisasters]];
+    let decadeFilter = ["==", ["get", "decade"], 1960];
+
+    //*****************
+    // Set slider props
+    //*****************
+    $("#start").html('1960s');
+    $("#end").html('2010s');
+
+    $('#slider').prop('min', 1960);
+    $('#slider').prop('max', 2010);
+    $('#slider').prop('value', 1960);
+
+
+    let sliderValG = $("#slider").val();
+    sliderValG = parseInt(sliderValG);
+
+    //******
+    // Data
+    //******
+    
+    // Countries geojson (polygons)
+    let geoJsonData = {
+      'type': 'FeatureCollection',
+      'features': []
+    };
+
+    // Disasters geojson (points)
+    let geoJsonDisasters = {
+      'type': 'FeatureCollection',
+      'features': []
+    };
+
+    
+
+    map.on('load', function () {
+
+      init();
+
+      if (!mobile) {
+        map.addControl(new mapboxgl.NavigationControl());
+      }
+      //const layers = map.getStyle().layers;
+      //console.log(layers)
+      //the layers var is just for me to figure out the ID I need to use for ordering the geojson layer above the labels 
+
+    });
+
+  
+
+
+
+    function init() {
+
+      $('#loading').hide();
+
+      //*************
+      // Process data
+      //*************
+
+      //link country geojson polygon to the data by looping over country data & geojson data
+      //only adding the ND-gain  & rank attributes for this map (plus lat/lon)
+      data.forEach(function (row) {
+        countries.features.forEach(function (country) {
+          if (country.properties.ISO3CD == row.Code) {
+            if (row.NDgain == "") {
+              country.properties.NDgain = 0;
+            } else {
+              country.properties.NDgain = row.NDgain;
+            }
+
+            country.properties.latitude = row.latitude;
+            country.properties.longitude = row.longitude;
+            country.properties.rankND = row.rankND;
+          }
+
+        })
+
+      });
+
+
+      //store disasters data as geojson format (with lat/lon points as geometry) 
+      disasters.forEach(function (row) {
+
+        const feature = {
+          'type': 'Feature',
+          'properties': {
+            'longitude': +row.longitude,
+            'latitude': +row.latitude,
+            'country': row.Country,
+            'decade': +row.decade,
+            'events': +row.total_events,
+            'affected': +row.total_affected,
+            'type': row.Disaster_Type
+          },
+          'geometry': {
+            'type': 'Point',
+            'coordinates': [+row.longitude, +row.latitude],
+          }
+        };
+
+        geoJsonDisasters['features'].push(feature);
+
+      });
+
+
+      //****************************************
+      // Add data to map & create toggle filters
+      //****************************************
+
+      addCountryLayer();
+      addDisasterLayer();
+
+      createDisastersFilter('filter1', 'layer1On', 'Flood');
+      createDisastersFilter('filter2', 'layer2On', 'Storm');
+      createDisastersFilter('filter3', 'layer3On', 'Drought');
+      createDisastersFilter('filter4', 'layer4On', 'Wildfire');
+      createDisastersFilter('filter5', 'layer5On', 'Extreme temperature');
+
+
+      //set initial filter for disaster type toggle & decade slider (all on)
+      map.setFilter('disasters', ['all', disasterFilter, decadeFilter]);
+
+
+      //*************
+      // Slider setup
+      //*************
+
+      document.getElementById('slider').addEventListener('input', function (e) {
+        const sliderVal = +e.target.value;
+        sliderValG = sliderVal;
+        document.getElementById('selectedDecade').innerText = sliderVal+'s';
+
+        disasterFilter = ["in", ["get", "type"], ["literal", activeDisasters]];
+        decadeFilter = ["==", ["get", "decade"], sliderValG];
+        map.setFilter('disasters', ['all', disasterFilter, decadeFilter]);
+      }); //end slider input
+
+
+      //*****************
+      // Map mouse events
+      //*****************
+
+      map.on('mouseleave', function () {
+        map.getCanvas().style.cursor = '';
+      });
+
+      map.on('click', 'countriesfill', function (e) {
+        map.getCanvas().style.cursor = 'pointer';
+        const country = e.features[0].properties.ROMNAM;
+        const latitude = e.features[0].properties.latitude;
+        const longitude = e.features[0].properties.longitude;
+        let NDgain = e.features[0].properties.NDgain;
+        let rankND = e.features[0].properties.rankND;
+        const popupClass = "customBg";
+
+        if (NDgain == 0 || NDgain == "") {
+          NDgain = "NA";
+          rankND = "";
+        } else {
+          rankND = `(Rank ${rankND})`;
+        }
+
+        if (country == "Jammu and Kashmir" || country == "Aksai Chin" || country == "Abyei" || country == "French Guiana" || country == "Puerto Rico (USA)" || country == "Arunachal Pradesh" || country == "French Southern Territories" || country == "New Caledonia" || country == "Antarctica" || country == "Greenland" || country == "Svalbard and Jan Mayen Islands" || country == "South Georgia and the South Sandwich Islands" || country == "Falkland Islands (Malvinas)" || country == "") {
+        } else {
+          popup = new mapboxgl.Popup({
+            closeButton: true,
+            closeOnClick: true,
+            className: popupClass
+          })
+            .setHTML(`<h3 class="customBg" style="background-color: ${(country == "Taiwan" || country == "Western Sahara" || country == "South Sudan")?"#999999":colorScale(NDgain)} !important;"><b>${country}</b></h3><h4><b>Climate readiness & vulnerability (ND-Gain Index)</b>: ${NDgain} ${rankND}</h4>`)
+            .setLngLat([longitude, latitude])
+            .addTo(map);
+        }
+
+      });
+
+      //mobile
+      map.on('touchstart', 'countriesfill', function (e) {
+        map.getCanvas().style.cursor = 'pointer';
+        const country = e.features[0].properties.ROMNAM;
+        const latitude = e.features[0].properties.latitude;
+        const longitude = e.features[0].properties.longitude;
+        let NDgain = e.features[0].properties.NDgain;
+        let rankND = e.features[0].properties.rankND;
+        const popupClass = "customBg";
+
+        if (NDgain == 0 || NDgain == "") {
+          NDgain = "NA";
+          rankND = "";
+        } else {
+          rankND = `(Rank ${rankND})`;
+        }
+
+        if (country == "Jammu and Kashmir" || country == "Aksai Chin" || country == "Abyei" || country == "French Guiana" || country == "Puerto Rico (USA)" || country == "Arunachal Pradesh" || country == "French Southern Territories" || country == "New Caledonia" || country == "Antarctica" || country == "Greenland" || country == "Svalbard and Jan Mayen Islands" || country == "South Georgia and the South Sandwich Islands" || country == "Falkland Islands (Malvinas)" || country == "") {
+        } else {
+          popup = new mapboxgl.Popup({
+            closeButton: true,
+            closeOnClick: true,
+            className: popupClass
+          })
+            .setHTML(`<h3 class="customBg" style="background-color: ${(country == "Taiwan" || country == "Western Sahara" || country == "South Sudan")?"#999999":colorScale(NDgain)} !important;"><b>${country}</b></h3><h4><b>Climate readiness & vulnerability (ND-Gain Index)</b>: ${NDgain} ${rankND}</h4>`)
+            .setLngLat([longitude, latitude])
+            .addTo(map);
+        }
+      });
+    }
+
+
+    //**********
+    // Functions 
+    //**********
+
+    //to add layers to map (called within init)
+    //add country geojson onto map
+    function addCountryLayer() {
+      //add geojson source from js file
+      map.addSource('countries', {
+        type: 'geojson',
+        data: countries
+      });
+
+      //after adding source add the fill as a layer on the map
+      map.addLayer({
+        'id': 'countriesfill',
+        'type': 'fill',
+        'source': 'countries',
+        'paint': {
+          'fill-color': [
+            'interpolate',
+            ['linear'],
+            ['get', 'NDgain'],
+            0,
+            "#888888",
+            20,
+            '#49010d',
+            30,
+            '#cb181d',
+            40,
+            '#fb6a4a',
+            50,
+            '#fc9272',
+            60,
+            '#fcbba1',
+            70,
+            '#fee0d2',
+            80,
+            '#fff5f0'
+          ],
+          'fill-opacity': 0.9
+        }
+      }, 'settlement-subdivision-label'); 
+      //this last variable is related to the order of the countries polygon geojson, I wanted to place it on below the country labels
+
+      //after adding source add the stroke separately as a layer on the map
+      map.addLayer({
+        'id': 'countriesline',
+        'type': 'line',
+        'source': 'countries',
+        'paint': {
+          'line-color': 'black',
+          'line-opacity': 1,
+          'line-width': 0.5
+        }
+      }, 'settlement-subdivision-label');
+    }
+
+
+    //to add layers to map (called within init)
+    //add disasters geojson onto map
+    function addDisasterLayer(){
+          map.addLayer({
+          id: 'disasters',
+          type: 'circle',
+          source: {
+            type: 'geojson',
+            data: geoJsonDisasters
+          },
+          paint: {
+            "circle-color": [
+              "case",
+              ["==", ["get", "type"], 'Flood'],
+              "#a8ddb5",
+              ["==", ["get", "type"], 'Storm'],
+              "#2b8cbe",
+              ["==", ["get", "type"], "Drought"],
+              "#c51b8a",
+              ["==", ["get", "type"], "Wildfire"],
+              "#d8b365",
+              "#8073ac"
+            ],
+            'circle-radius': [
+              'interpolate',
+              ["linear"],
+              ['get', 'events'],
+              minDisasters,
+              minCircleSize,
+              maxDisasters,
+              maxCircleSize
+            ],
+            'circle-opacity': 1,
+            'circle-stroke-color': '#000',
+            'circle-stroke-width': 0.5
+          }
+        });
+      }
+
+
+      //to create filter for toggles
+      function createDisastersFilter(filterName, layerOnName, disasterString) {
+        document.getElementById(filterName).addEventListener('change', function (e) {
+          //if a toggled disaster (to on) doesn't exist, then add it to the active array
+          if (e.target.value === layerOnName) {
+            if (activeDisasters.indexOf(disasterString) == -1) {
+              activeDisasters.push(disasterString)
+            }
+            disasterFilter = ["in", ["get", "type"], ["literal", activeDisasters]];
+            decadeFilter = ["==", ["get", "decade"], sliderValG];
+            map.setFilter('disasters', ['all', disasterFilter, decadeFilter]);
+
+          } else {
+            //if a toggled disaster (to off) exists, then remove it to the active array
+            if (activeDisasters.indexOf(disasterString) !== -1) {
+              var index = activeDisasters.indexOf(disasterString);
+              activeDisasters.splice(index, 1);
+            }
+            disasterFilter = ["in", ["get", "type"], ["literal", activeDisasters]];
+            decadeFilter = ["==", ["get", "decade"], sliderValG];
+            map.setFilter('disasters', ['all', disasterFilter, decadeFilter]);
+
+          }
+        });
+
+      }
+  </script>
+</body>
+<div id="loading">
+  <img id="loading-image" src="./img/load.gif" alt="Loading..." />
+</div>
+
+</html>
